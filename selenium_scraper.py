@@ -47,6 +47,9 @@ def log_in(driver):
 
 
 def has_website_changed(driver, url, no_appointment_text):
+    global send_text
+    appts = []
+
     '''Checks for changes in the site. Returns True if a change was found.'''
     # Log in
     while True:
@@ -58,34 +61,75 @@ def has_website_changed(driver, url, no_appointment_text):
             time.sleep(5)
 
     # # For debugging false positives.
-    # with open('debugging/page_source.html', 'w', encoding='utf-8') as f:
-    #     f.write(driver.page_source)
+    with open('debugging/page_source.html', 'w', encoding='utf-8') as f:
+         f.write(driver.page_source)
 
     # Getting main text
-    main_page = driver.find_element(By.ID, 'main')
+#    main_page = driver.find_element(By.ID, 'main')
+
+    while True:
+        try:
+            driver.find_element(By.XPATH, '//*[@id="appointments_consulate_appointment_date"]').click()
+            break
+        except ElementNotInteractableException:
+            time.sleep(3)
+
+    # Check current month
+    class_name = "ui-datepicker-group-first"
+    try:
+        div_month = driver.find_element(By.CLASS_NAME, class_name)
+
+        for date_element in div_month.find_elements(By.CLASS_NAME, "ui-state-default"):
+            parent = date_element.find_element(By.XPATH, '..')
+            css_class = parent.get_attribute('class')
+            if not 'ui-datepicker-unselectable' in css_class:
+                date_text = date_element.text
+                appts.append(date_text)
+    except NoSuchElementException:
+        send_message('No element with month1, skipping...')
+
+    # Check next month
+    class_name = "ui-datepicker-group-last"
+    try:
+        div_month = driver.find_element(By.CLASS_NAME, class_name)
+
+        for date_element in div_month.find_elements(By.CLASS_NAME, "ui-state-default"):
+            parent = date_element.find_element(By.XPATH, '..')
+            css_class = parent.get_attribute('class')
+            if not 'ui-datepicker-unselectable' in css_class:
+                date_text = date_element.text
+                appts.append(date_text)
+    except NoSuchElementException:
+        send_message('No element with month2, skipping...')
+
 
     # For debugging false positives.
-    with open('debugging/main_page', 'w') as f:
-        f.write(main_page.text)
+#    with open('debugging/main_page', 'w') as f:
+#        f.write(main_page.text)
+
+    if appts:
+        send_text = ", ".join(appts)
+        return True
 
     # If the "no appointment" text is not found return True. A change was found.
-    return no_appointment_text not in main_page.text
-
+#    return no_appointment_text not in main_page.text
+    return False
 
 def run_visa_scraper(url, no_appointment_text):
     # To run Chrome in a virtual display with xvfb (just in Linux)
     # display = Display(visible=0, size=(800, 600))
     # display.start()
 
-    seconds_between_checks = 10 * 60
+    # I got banned with 30 and 300
+    seconds_between_checks = 450
 
     # Setting Chrome options to run the scraper headless.
     chrome_options = Options()
     # chrome_options.add_argument("--disable-extensions")
     # chrome_options.add_argument("--disable-gpu")
     # chrome_options.add_argument("--no-sandbox") # linux only
-    if os.getenv('HEADLESS') == 'True':
-        chrome_options.add_argument("--headless")  # Comment for visualy debugging
+#    if os.getenv('HEADLESS') == 'True':
+#        chrome_options.add_argument("--headless")  # Comment for visualy debugging
 
     # Initialize the chromediver (must be installed and in PATH)
     # Needed to implement the headless option
@@ -95,8 +139,9 @@ def run_visa_scraper(url, no_appointment_text):
         current_time = time.strftime('%a, %d %b %Y %H:%M:%S', time.localtime())
         print(f'Starting a new check at {current_time}.')
         if has_website_changed(driver, url, no_appointment_text):
-            print('A change was found. Notifying it.')
-            send_message('A change was found. Here is an screenshot.')
+            print('A slot was found. Notifying it.')
+            send_message('A day with a free slot was found. Here is an screenshot.')
+            send_message(send_text)
             send_photo(driver.get_screenshot_as_png())
 
             # Closing the driver before quicking the script.
@@ -109,7 +154,7 @@ def run_visa_scraper(url, no_appointment_text):
             for seconds_remaining in range(int(seconds_between_checks), 0, -1):
                 sys.stdout.write('\r')
                 sys.stdout.write(
-                    f'No change was found. Checking again in {seconds_remaining} seconds.'
+                    f'No slot was found. Checking again in {seconds_remaining} seconds.'
                 )
                 sys.stdout.flush()
                 time.sleep(1)
